@@ -57,7 +57,7 @@ jobs:
       attestations: write # needed for build provenance attestation
       packages: write # needed for pushing to ghcr.io
       artifact-metadata: write # needed for build provenance attestation
-    uses: bowtie-json-schema/bowtie/.github/workflows/harness-ci.yml@a0ae283dca0a0d0eb2381a886d5499162f33c82a # main
+    uses: bowtie-json-schema/bowtie/.github/workflows/harness-ci.yml@9510c9c300c722d32e15710b11cd3c052cdc2bd0 # main
     with:
       # Only publish from pushes to the default branch; PRs build & smoke only.
       publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
