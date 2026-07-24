@@ -1,0 +1,43 @@
+# Build and publish this harness's image for a Dependabot dependency bump.
+#
+# Dependabot-triggered `Rebuild Bowtie Image` runs get a read-only token and no access to secrets,
+# so they can build & smoke test but cannot publish.
+# This workflow runs once that run succeeds, in the trusted context of the base repository,
+# and publishes the image built from the Dependabot branch's head commit.
+name: Publish Dependabot Image
+
+# `workflow_run` is required so that publishing runs with a writable token;
+# it is tightly gated below on a successful, Dependabot-authored `Build Image` run.
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers] required for a writable token; gated on a successful Dependabot run below
+    types: [completed]
+    # Must match the `name:` of build.yml exactly.
+    workflows: ["Rebuild Bowtie Image"]
+    branches:
+      - "dependabot/**"
+
+permissions: {}
+
+concurrency:
+  # If several Dependabot PRs land close together, only publish the latest.
+  group: dependabot-${{ github.event.workflow_run.event }}-${{ github.event.workflow_run.triggering_actor.login }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Build and Publish
+    if: >
+      github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.triggering_actor.login == 'dependabot[bot]'
+    permissions:
+      id-token: write # needed for build provenance attestation
+      contents: read # needed for actions/checkout
+      attestations: write # needed for build provenance attestation
+      packages: write # needed for pushing to ghcr.io
+      artifact-metadata: write # needed for build provenance attestation
+    uses: bowtie-json-schema/bowtie/.github/workflows/harness-ci.yml@a0ae283dca0a0d0eb2381a886d5499162f33c82a # main
+    with:
+      ref: ${{ github.event.workflow_run.head_sha }}
+      publish: true
+      is-latest: true

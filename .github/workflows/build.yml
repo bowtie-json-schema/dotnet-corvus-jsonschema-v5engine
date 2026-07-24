@@ -1,0 +1,134 @@
+# Build, smoke-test and (on pushes to main) publish this harness's image.
+#
+# The actual build/test/publish logic is centralized in Bowtie's reusable `harness-ci.yml` workflow
+# so that a fix to how we build images reaches every harness at once.
+# This file only wires up the triggers and the small amount of per-repository orchestration
+# (version bookkeeping and Dependabot automerge).
+name: Rebuild Bowtie Image
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches-ignore:
+      - "wip*"
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  meta:
+    name: Collect the currently published version
+    runs-on: ubuntu-latest
+    outputs:
+      latest-version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Install Bowtie
+        uses: bowtie-json-schema/bowtie@a0ae283dca0a0d0eb2381a886d5499162f33c82a # main
+
+      - name: Compute implementation name
+        id: impl
+        env:
+          GH_REPOSITORY: ${{ github.repository }}
+        run: echo "name=${GH_REPOSITORY##*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute the latest published implementation version
+        id: version
+        env:
+          IMPL_NAME: ${{ steps.impl.outputs.name }}
+        run: |
+          # Empty on the very first build, before any image has been published.
+          version=$(bowtie info --implementation "${IMPL_NAME}" --format json 2>/dev/null | jq -r '.version // empty' || true)
+          echo "value=${version}" >> "$GITHUB_OUTPUT"
+          echo "Latest published version: ${version:-<none>}"
+
+  ci:
+    name: Build
+    needs: meta
+    # The template repository itself has no real harness to build.
+    # Repositories created from it do, so this always runs for them.
+    if: github.repository != 'bowtie-json-schema/test-harness-template'
+    permissions:
+      id-token: write # needed for build provenance attestation
+      contents: read # needed for actions/checkout
+      attestations: write # needed for build provenance attestation
+      packages: write # needed for pushing to ghcr.io
+      artifact-metadata: write # needed for build provenance attestation
+    uses: bowtie-json-schema/bowtie/.github/workflows/harness-ci.yml@a0ae283dca0a0d0eb2381a886d5499162f33c82a # main
+    with:
+      # Only publish from pushes to the default branch; PRs build & smoke only.
+      publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      is-latest: ${{ github.ref == 'refs/heads/main' }}
+      # Override any of the following per harness as needed:
+      qemu: false
+      # smoke-continue-on-error: true  # only if the impl can't pass smoke yet
+
+  mark-previous-version:
+    name: Tag the previous version's release
+    needs: [ci, meta, automerge]
+    runs-on: ubuntu-latest
+
+    # When the freshly built version differs from what was previously
+    # published, cut a release (and therefore a git tag) pinned to the previous
+    # commit so `build-all` can rebuild that historical version on demand.
+    # Skipped on a repository's first push, when there is no previous commit.
+    if: |
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
+      )
+      && github.event.before != '0000000000000000000000000000000000000000'
+      && needs.meta.outputs.latest-version != ''
+      && needs.ci.outputs.current-version != needs.meta.outputs.latest-version
+      && !cancelled()
+
+    permissions:
+      contents: write
+
+    env:
+      VERSION: ${{ needs.meta.outputs.latest-version }}
+      # Either the PR base ref or the previous commit on the branch.
+      COMMIT: ${{ github.event.pull_request.base.sha || github.event.before }}
+      GH_REPOSITORY: ${{ github.repository }}
+
+    steps:
+      - name: Create a release for the previous implementation version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: harness-release-${{ env.VERSION }}
+        run: >
+          gh api
+          --method POST
+          -H "Accept: application/vnd.github+json"
+          -H "X-GitHub-Api-Version: 2022-11-28"
+          "/repos/${GH_REPOSITORY}/releases"
+          -f "tag_name=$TAG"
+          -f "target_commitish=$COMMIT"
+          -f "name=$VERSION"
+          -f "body=Automatic release for $VERSION"
+          -F "generate_release_notes=true"
+
+  automerge:
+    name: Automerge Dependabot PRs
+    needs: ci
+    runs-on: ubuntu-latest
+
+    if: >
+      !cancelled()
+      && github.event_name == 'pull_request'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+      && !contains(github.event.pull_request.labels.*.name, 'github_actions')
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Automatically merge allowed PRs
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

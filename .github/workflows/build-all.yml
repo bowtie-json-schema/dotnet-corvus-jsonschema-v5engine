@@ -1,0 +1,51 @@
+# Rebuild and publish every historical version of this harness.
+#
+# Versions are git tags (`harness-release-*`, created automatically by build.yml) plus the current `main`.
+# Each is (re)built and published through Bowtie's reusable `harness-ci.yml` workflow.
+# Run this manually to backfill images, e.g. right after extracting a harness that had a `matrix-versions.json`.
+name: Build All Versions
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  versions:
+    name: Collect available versions
+    runs-on: ubuntu-latest
+    outputs:
+      revisions: ${{ steps.revisions.outputs.value }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Collect available versions
+        id: revisions
+        run: |
+          # Only the auto-created per-version release tags, plus current `main`.
+          tags=$(jq -c -n '$ARGS.positional + ["main"]' --args $(git tag --list 'harness-release-*'))
+          echo "value=${tags}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build
+    needs: versions
+    strategy:
+      # Backfill as many versions as possible; don't abort the rest on one failure.
+      fail-fast: false
+      matrix:
+        revision: ${{ fromJson(needs.versions.outputs.revisions) }}
+    permissions:
+      id-token: write # needed for build provenance attestation
+      contents: read # needed for actions/checkout
+      attestations: write # needed for build provenance attestation
+      packages: write # needed for pushing to ghcr.io
+      artifact-metadata: write # needed for build provenance attestation
+    uses: bowtie-json-schema/bowtie/.github/workflows/harness-ci.yml@a0ae283dca0a0d0eb2381a886d5499162f33c82a # main
+    with:
+      ref: ${{ matrix.revision }}
+      publish: true
+      is-latest: ${{ matrix.revision == 'main' }}
