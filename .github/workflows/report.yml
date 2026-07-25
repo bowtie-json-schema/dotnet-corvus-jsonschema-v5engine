@@ -1,0 +1,27 @@
+# Report this harness's Bowtie compliance on a schedule.
+#
+# The actual logic -- run the official suite against this harness's published
+# image and publish the per-dialect reports -- is centralized in Bowtie's
+# reusable `harness-report.yml`, so a change reaches every harness at once.
+# Bowtie's central report workflow then collects and combines each harness's
+# published report.
+name: Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every 6 hours. `bowtie site collect` pins the suite to a per-hour commit,
+    # so every harness running in the same hour reports against the same suite.
+    # The minute is staggered per repository during rollout to spread load.
+    - cron: "20 */6 * * *"
+
+permissions: {}
+
+jobs:
+  report:
+    # The template itself has no real harness image to report on.
+    if: github.repository != 'bowtie-json-schema/test-harness-template'
+    permissions:
+      contents: write # to publish the report release
+      packages: read # to pull the harness's own image
+    uses: bowtie-json-schema/bowtie/.github/workflows/harness-report.yml@0e63bcfce60f317c928b1ac141dcaebdcc14ce29 # main
