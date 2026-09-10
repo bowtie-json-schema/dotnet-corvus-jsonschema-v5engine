@@ -15,3 +15,16 @@ updates:
       default-days: 3
 
   # add test harness configuration here
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    groups:
+      corvus-text-json:
+        patterns:
+          - "Corvus.Text.Json.*"
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"
+    cooldown:
+      default-days: 3

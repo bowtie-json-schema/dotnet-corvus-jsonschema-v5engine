@@ -30,6 +30,12 @@ var builders = new Dictionary<string, (Func<IVocabulary>, bool)> {
 IVocabulary? defaultVocabulary = null;
 bool validateFormat = false;
 
+// Bowtie (e.g. `bowtie site collect`) may drive several dialects through a single harness process,
+// sending a new `dialect` command for each and restarting `seq` at 1. The library keeps a
+// process-wide cache of compiled schemas keyed on the schema URI, so the URI we assign to each
+// incoming schema must be unique across dialect runs, not just within one.
+int dialectRun = 0;
+
 while (cmdSource.GetNextCommand() is { } line && line != string.Empty)
 {
     var root = JsonNode.Parse(line);
@@ -86,6 +92,7 @@ while (cmdSource.GetNextCommand() is { } line && line != string.Empty)
             string? dialect = root["dialect"]?.GetValue<string>() ?? throw new MissingDialect(root);
             (Func<IVocabulary>? vocabularyFactory, validateFormat) = builders[dialect];
             defaultVocabulary = vocabularyFactory();
+            dialectRun++;
             var dialectResult = new System.Text.Json.Nodes.JsonObject {
                 ["ok"] = true,
             };
@@ -128,7 +135,7 @@ while (cmdSource.GetNextCommand() is { } line && line != string.Empty)
                 }
             }
 
-            string fakeURI = $"https://example.com/bowtie-sent-schema-{root["seq"]?.ToJsonString()}.json";
+            string fakeURI = $"https://example.com/bowtie-sent-schema-{dialectRun}-{root["seq"]?.ToString()}.json";
 
             string testDescription = string.Empty;
 
@@ -140,7 +147,8 @@ while (cmdSource.GetNextCommand() is { } line && line != string.Empty)
                                                  new JsonSchema.Options(additionalDocumentResolver: resolver,
                                                                         fallbackVocabulary: defaultVocabulary,
                                                                         alwaysAssertFormat: validateFormat,
-                                                                        allowFileSystemAndHttpResolution: false));
+                                                                        allowFileSystemAndHttpResolution: false),
+                                                 refreshCache: true);
 
                 var results = new System.Text.Json.Nodes.JsonArray();
 
