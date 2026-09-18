@@ -44,7 +44,7 @@ jobs:
       attestations: write # needed for build provenance attestation
       packages: write # needed for pushing to ghcr.io
       artifact-metadata: write # needed for build provenance attestation
-    uses: bowtie-json-schema/bowtie/.github/workflows/harness-ci.yml@057e4294076831301bad1e13a987f3053cb86912 # main
+    uses: bowtie-json-schema/bowtie/.github/workflows/harness-ci.yml@a345346c3418d8022f2557b1eb3d886d9eb08142 # main
     with:
       ref: ${{ matrix.revision }}
       publish: true
