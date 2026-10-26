@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.402 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.403 AS build
 ARG TARGETARCH
 
 # Native AOT needs a C toolchain. The arm64 image is cross-compiled on the amd64 build host: Ubuntu keeps its
