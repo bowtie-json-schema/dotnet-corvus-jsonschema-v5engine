@@ -26,7 +26,7 @@ RUN if [ "${TARGETARCH}" = "arm64" ] && [ "$(dpkg --print-architecture)" != "arm
     && dotnet publish -a ${TARGETARCH} --no-restore -c Release -o /app ${objcopy}
 
 # runtime-deps carries ICU and the native libraries the AOT binary links against; no .NET runtime is needed.
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0
+FROM mcr.microsoft.com/dotnet/runtime-deps:11.0
 WORKDIR /app
 COPY --from=build /app/bowtie_corvus_jsonschema_v5engine .
 ENTRYPOINT ["./bowtie_corvus_jsonschema_v5engine"]
